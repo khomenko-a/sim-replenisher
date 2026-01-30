@@ -3,6 +3,7 @@ using SimReplenisher.Domain.Entities;
 using SimReplenisher.Domain.Enums;
 using SimReplenisher.Domain.Exceptions;
 using SimReplenisher.Domain.Interfaces;
+using System.Xml;
 
 namespace SimReplenisher.PhoneManager.Scenarios
 {
@@ -11,29 +12,33 @@ namespace SimReplenisher.PhoneManager.Scenarios
         private readonly ITextRecognizerService _textRecognizerService;
         private readonly ILogger _logger;
 
-        private Page _supposedCurrentPage;
-
-        private static readonly string[] _mainPageMarkers =
+        private static readonly string[] MAIN_PAGE_MARKERS =
         {
             "Усі рахунки",
             "Головна",
             "Депозити",
             "Усі платежі"
         };
-        private static readonly string[] _amountPageMarkers =
+        private static readonly string[] AMOUNT_PAGE_MARKERS =
         {
             "Немає комісії",
-            "0.00",
+            "0,00",
             "З картки"
         };
 
+        private const string PASSWORD_PAGE_MARKER = "//node[@text=\"Введіть пароль\"]";
+        private const string TOP_UP_CELL_PHONE_PAGE_MARKER = "//node[contains(@text, 'Отримувач')]";
+        private const string CONFIRMATION_PAGE_MARKER = "//node[contains(@text, 'Оплатити')]";
+        private const string SUCCESS_PAGE_MARKER = "//node[@text='Платіж прийнято']";
+        private const string HOMESCREEN_PAGE_MARKER = "//node[@resource-id='com.ldmnq.launcher3:id/workspace']";
+        private const string AMOUNT_PAGE_MARKER = "//node[@resource-id='uds_amount_input_amount']";
+
         private const string APP_PACKAGE_NAME = "ua.raiffeisen.myraif";
         private const int PASSWORD_LENGTH = 4;
-        private const int MAX_ATTEMPTS_GET_XMLDUMP = 15;
-        private const int MAX_ATTEMPTS_RECOGNIZE_TEXT = 3;
         private const int MAX_ATTEMPTS_OPEN_PAGE = 2;
+        private const int MAX_ATTEMPTS_IDENTIFY_PAGE = 5;
 
-        private const int SHORT_DELAY = 1500;
+        private const int SHORT_DELAY = 2000;
         private const int MIDDLE_DELAY = 4000;
         private const int LONG_DELAY = 7000;
 
@@ -45,124 +50,165 @@ namespace SimReplenisher.PhoneManager.Scenarios
 
         public AppType Bank => AppType.RaiffaisenBank;
 
-        public async Task ReplenishNumber(IPhoneDevice device, SimToReplenish simToReplenish) //add custom exceptions and logging
+        public async Task ReplenishNumber(IPhoneDevice device, SimToReplenish simToReplenish)
         {
-            for (int attempt = 0; attempt < MAX_ATTEMPTS_OPEN_PAGE; attempt++)
-            {
-                var isMainPageOpened = await OpenAppOnMainPageAsync(device);
+            int totalAttempts = 0;
 
-                if (isMainPageOpened)
+            var previousPage = Page.Default;
+            int stuckOnPageCount = 0;
+
+            while (totalAttempts < MAX_ATTEMPTS_IDENTIFY_PAGE)
+            {
+                var currentPage = await DetectCurrentPageAsync(device, previousPage);
+
+                if (currentPage == Page.Unknown)
                 {
-                    break;
+                    _logger.LogWarning("Could not identify the current page. Retrying...");
+                    totalAttempts++;
+                    await Task.Delay(MIDDLE_DELAY);
+
+                    if (totalAttempts == MAX_ATTEMPTS_IDENTIFY_PAGE)
+                    {
+                        var xml = await device.GetXmlDumpAsync();
+                        await device.CloseBankAppAsync(APP_PACKAGE_NAME);
+                        await Task.Delay(SHORT_DELAY);
+                        throw new PageLoadException(currentPage, xml);
+                    }
+
+                    continue;
                 }
 
-                await device.CloseBankApp(APP_PACKAGE_NAME);
-                await Task.Delay(3000);
+                _logger.LogInformation("Current page detected: {CurrentPage}", currentPage);
 
-                if (attempt == MAX_ATTEMPTS_OPEN_PAGE - 1)
+                if (currentPage == previousPage)
                 {
-                    var dump = await device.GetXmlDumpAsync();
+                    if (stuckOnPageCount == MAX_ATTEMPTS_OPEN_PAGE)
+                    {
+                        var xml = await device.GetXmlDumpAsync();
+                        await ReturnToMainPageAsync(device);
+                        throw new PageLoadException(currentPage + 1, xml);
+                    }
 
-                    throw new PageLoadException(Page.Main, dump);
+                    stuckOnPageCount++;
+                    await Task.Delay(LONG_DELAY);
                 }
-                //await RestartPhoneAsync(device); EMULATOR CAN'T BE RESTARTED VIA ADB
-            }
+                else
+                {
+                    stuckOnPageCount = 0;
+                    totalAttempts = 0;
+                }
 
-            var isTopUpCellPhonePageOpened = await OpenTopUpCellPhonePageAsync(device);
-            if (!isTopUpCellPhonePageOpened)
-            {
-                var dump = await device.GetXmlDumpAsync();
+                previousPage = currentPage;
 
-                throw new PageLoadException(Page.TopUpCellPhone, dump);
-            }
+                switch (currentPage)
+                {
+                    case Page.HomeScreen:
+                        await OpenAppOnMainPageAsync(device);
+                        await Task.Delay(LONG_DELAY);
+                        break;
 
-            var isAmountPageOpened = await OpenAmountPageAsync(device, simToReplenish);
-            if (!isAmountPageOpened)
-            {
-                var dump = await device.GetXmlDumpAsync();
+                    case Page.PasswordInput:
+                        await UnlockBankApp(device);
+                        await Task.Delay(LONG_DELAY);
+                        break;
 
-                throw new PageLoadException(Page.AmountSelection, dump);
-            }
+                    case Page.Main:
+                        await OpenTopUpCellPhonePageAsync(device);
+                        await Task.Delay(MIDDLE_DELAY);
+                        break;
 
-            var isConfirmationPageOpened = await OpenConfirmationReplenishment(device, simToReplenish);
-            if (!isConfirmationPageOpened)
-            {
-                var dump = await device.GetXmlDumpAsync();
+                    case Page.TopUpCellPhone:
+                        await OpenAmountPageAsync(device, simToReplenish);
+                        await Task.Delay(MIDDLE_DELAY);
+                        break;
 
-                throw new PageLoadException(Page.Confirmation, dump);
-            }
-            
-            var isConfirmedPageOpened = await OpenConfirmedPage(device);
-            if (!isConfirmedPageOpened)
-            {
-                var dump = await device.GetXmlDumpAsync();
+                    case Page.AmountSelection:
+                        await OpenConfirmationReplenishmentPageAsync(device, simToReplenish);
+                        await Task.Delay(LONG_DELAY);
+                        break;
 
-                throw new PageLoadException(Page.Success, dump);
+                    case Page.Confirmation:
+                        await OpenConfirmedPageAsync(device);
+                        await Task.Delay(LONG_DELAY);
+                        break;
+
+                    case Page.Success:
+                        await FinishReplenishmentAsync(device);
+                        await Task.Delay(SHORT_DELAY);
+                        return;
+                }
             }
         }
 
-        /*private async Task RestartPhoneAsync(IPhoneDevice device) EMULATOR CAN'T BE RESTARTED VIA ADB
+        private async Task ReturnToMainPageAsync(IPhoneDevice device)
         {
-            throw new NotImplementedException();
-        }*/
+            var currentPage = await DetectCurrentPageAsync(device);
 
-        private async Task<bool> OpenAppOnMainPageAsync(IPhoneDevice device) //add logging
-        {
-            var xmLDump = await device.GetXmlDumpAsync();
-
-            if (xmLDump != null)
+            while (currentPage != Page.Main)
             {
-                _logger.LogInformation("Going back to the home screen");
-                await device.GoToHomeScreenAsync();
-
+                await device.ExecuteAdbShellCommandAsync("input keyevent 4"); // back button
                 await Task.Delay(SHORT_DELAY);
 
-                _logger.LogInformation("Opening bank app");
-                await device.OpenBankApp(APP_PACKAGE_NAME);
-
-                await Task.Delay(LONG_DELAY);
-
-                for (int attempt = 0; attempt < MAX_ATTEMPTS_GET_XMLDUMP; attempt++)
-                {
-                    xmLDump = await device.GetXmlDumpAsync();
-                    var appNode = xmLDump?.SelectSingleNode("//node[@text=\"Введіть пароль\"]");
-
-                    if (appNode != null)
-                    {
-                        await UnlockBankApp(device);
-
-                        await Task.Delay(MIDDLE_DELAY);
-
-                        break;
-                    }
-
-                    _logger.LogInformation("Didn't find password page. Trying again");
-                    await Task.Delay(MIDDLE_DELAY);
-                }
+                currentPage = await DetectCurrentPageAsync(device, currentPage);
             }
+        }
 
-            await Task.Delay(5000);
-
-            for (int attempt = 0; attempt < MAX_ATTEMPTS_RECOGNIZE_TEXT; attempt++)
+        private async Task<Page> DetectCurrentPageAsync(IPhoneDevice device, Page previousPage = Page.Unknown)
+        {
+            var xml = await device.GetXmlDumpAsync();
+            if (xml != null)
             {
-                _logger.LogInformation("Using CV to get text on the screen.");
-                var textOnScreen = await TakeScreenShotAndRecognizeText(device);
-
-                var res = _mainPageMarkers.Any(marker =>
-                textOnScreen.Contains(marker, StringComparison.OrdinalIgnoreCase));
-
-                if (res)
-                {
-                    _logger.LogInformation("Main page is open");
-                    return res;
-                }
-
-                await Task.Delay(2000);
+                if (xml.SelectSingleNode(HOMESCREEN_PAGE_MARKER) != null) return Page.HomeScreen;
+                if (xml.SelectSingleNode(PASSWORD_PAGE_MARKER) != null) return Page.PasswordInput;
+                if (xml.SelectSingleNode(SUCCESS_PAGE_MARKER) != null) return Page.Success;
+                if (xml.SelectSingleNode(AMOUNT_PAGE_MARKER) != null) return Page.AmountSelection;
+                if (xml.SelectSingleNode(TOP_UP_CELL_PHONE_PAGE_MARKER) != null) return Page.TopUpCellPhone;
+                if (xml.SelectSingleNode(CONFIRMATION_PAGE_MARKER) != null) return Page.Confirmation;
             }
 
-            _logger.LogWarning("Couldnt open main page");
+            if (previousPage == Page.TopUpCellPhone
+                || previousPage == Page.HomeScreen
+                || previousPage == Page.Default)
+            {
+                var text = await TakeScreenShotAndRecognizeText(device);
 
-            return false;
+                if (MAIN_PAGE_MARKERS.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase)))
+                    return Page.Main;
+
+                if (AMOUNT_PAGE_MARKERS.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase)))
+                    return Page.AmountSelection;
+            }
+
+            return Page.Unknown;
+        }
+
+        private async Task OpenAppOnMainPageAsync(IPhoneDevice device) //add logging
+        {
+            _logger.LogInformation("Opening bank app");
+            await device.OpenBankApp(APP_PACKAGE_NAME);
+
+            await Task.Delay(LONG_DELAY);
+
+            for (int i = 0; i < MAX_ATTEMPTS_IDENTIFY_PAGE; i++)
+            {
+                var page = await DetectCurrentPageAsync(device);
+
+                switch (page)
+                {
+                    case Page.Main:
+                        return;
+
+                    case Page.PasswordInput:
+                        await UnlockBankApp(device);
+                        await Task.Delay(LONG_DELAY);
+                        return;
+
+                    default:
+                        _logger.LogInformation("Current page is {Page}. Trying again...", page);
+                        await Task.Delay(MIDDLE_DELAY);
+                        break;
+                }
+            }
         }
 
         private async Task UnlockBankApp(IPhoneDevice device)
@@ -175,40 +221,18 @@ namespace SimReplenisher.PhoneManager.Scenarios
             }
         }
 
-        private async Task<bool> OpenTopUpCellPhonePageAsync(IPhoneDevice device)
+        private async Task OpenTopUpCellPhonePageAsync(IPhoneDevice device)
         {
             _logger.LogInformation("Clicking Top up cell phone");
             await device.TapAsync(620, 1270, 720, 1330); // tap Top up cell phone
-            await Task.Delay(MIDDLE_DELAY);
-
-            var xmLDump = await device.GetXmlDumpAsync();
-            var appNode = xmLDump?.SelectSingleNode("//node[@text='Поповнити мобільний']");
-
-            if (xmLDump is null)
-            {
-                await Task.Delay(SHORT_DELAY);
-
-                xmLDump = await device.GetXmlDumpAsync();
-                appNode = xmLDump?.SelectSingleNode("//node[@text='Поповнити мобільний']");
-            }
-
-            if (appNode != null)
-            {
-                _logger.LogInformation("TopUp cellphone page is open");
-                return true;
-            }
-
-            _logger.LogWarning("Couldnt open TopUp cellphone page");
-
-            return false;
         }
 
-        private async Task<bool> OpenAmountPageAsync(IPhoneDevice device, SimToReplenish simToReplenish)
+        private async Task OpenAmountPageAsync(IPhoneDevice device, SimToReplenish simToReplenish)
         {
             _logger.LogInformation("Clicking phone number field");
             await device.TapAsync(48, 438, 1032, 630); // tap phone number field
 
-            await Task.Delay(MIDDLE_DELAY);
+            await Task.Delay(SHORT_DELAY);
 
             await device.InputTextAsync(simToReplenish.SimData.PhoneNumber);
 
@@ -216,39 +240,9 @@ namespace SimReplenisher.PhoneManager.Scenarios
 
             _logger.LogInformation("Clicking Top Up button");
             await device.TapAsync(48, 1728, 1032, 1872); // tap Top Up
-
-            await Task.Delay(MIDDLE_DELAY);
-
-            var xmLDump = await device.GetXmlDumpAsync();
-
-            if (xmLDump != null)
-            {
-                return false;
-            }
-
-            for (int attempt = 0; attempt < MAX_ATTEMPTS_RECOGNIZE_TEXT; attempt++)
-            {
-                _logger.LogInformation("Using CV to get text on the screen.");
-                var textOnScreen = await TakeScreenShotAndRecognizeText(device);
-
-                var res = _amountPageMarkers.Any(marker =>
-                textOnScreen.Contains(marker, StringComparison.OrdinalIgnoreCase));
-
-                if (res)
-                {
-                    _logger.LogInformation("Amount selection page is open");
-                    return res;
-                }
-
-                await Task.Delay(SHORT_DELAY);
-            }
-
-            _logger.LogWarning("Couldnt open Amount selection page");
-
-            return false;
         }
 
-        private async Task<bool> OpenConfirmationReplenishment(IPhoneDevice device, SimToReplenish simToReplenish)
+        private async Task OpenConfirmationReplenishmentPageAsync(IPhoneDevice device, SimToReplenish simToReplenish)
         {
             await device.InputTextAsync(simToReplenish.Amount.ToString());
 
@@ -256,80 +250,18 @@ namespace SimReplenisher.PhoneManager.Scenarios
 
             _logger.LogInformation("Clicking Continue button");
             await device.TapAsync(48, 1728, 1032, 1872); // tap Continue
-
-            await Task.Delay(MIDDLE_DELAY);
-
-            var xmLDump = await device.GetXmlDumpAsync();
-
-            if (xmLDump is null) // change to cycle WHERE xml shuold be 100% w/ MAX_ATTEMPTS_GET_XMLDUMP !!!!!!!!!!!!!!!!!!!!!!
-            {
-                await Task.Delay(SHORT_DELAY);
-
-                xmLDump = await device.GetXmlDumpAsync();
-            }
-
-            var appNode = xmLDump?.SelectSingleNode("//node[@resource-id='uds_amount_input_amount']");
-
-            var errorNode = xmLDump?.SelectSingleNode("//node[@resource-id='uds_alert_message']");
-
-            if (appNode != null || errorNode != null)
-            {
-                await Task.Delay(MIDDLE_DELAY);
-
-                for (int i = 0; i < 2; i++) // go back to the main page (just double click go back button)
-                {
-                    await device.TapAsync(84, 156, 90, 170);
-                    _logger.LogInformation("{Iteration} click back", i + 1);
-                    await Task.Delay(MIDDLE_DELAY);
-                }
-
-                return false;
-            }
-
-            await Task.Delay(MIDDLE_DELAY);
-
-            xmLDump = await device.GetXmlDumpAsync();
-            appNode = xmLDump?.SelectSingleNode("//node[contains(@text, 'Оплатити')]");
-
-            if (appNode == null)
-            {
-                _logger.LogWarning("Couldnt open Confirmation page");
-                return false;
-            }
-
-            _logger.LogInformation("Confirmation page is open");
-
-            return true;
         }
 
-        private async Task<bool> OpenConfirmedPage(IPhoneDevice device)
+        private async Task OpenConfirmedPageAsync(IPhoneDevice device)
         {
             _logger.LogInformation("Clicking Pay button");
             await device.TapAsync(48, 1728, 1032, 1872); // tap Pay
-            await Task.Delay(LONG_DELAY);
+        }
 
-            for (int attempt = 0; attempt < MAX_ATTEMPTS_GET_XMLDUMP; attempt++)
-            {
-                var xmLDump = await device.GetXmlDumpAsync();
-                var appNode = xmLDump?.SelectSingleNode("//node[@text='Платіж прийнято']");
-
-                if (appNode != null)
-                {
-                    _logger.LogInformation("DONE!");
-                    await device.TapAsync(48, 1728, 1032, 1872); // tap Done
-
-                    await Task.Delay(MIDDLE_DELAY);
-
-                    return true;
-                }
-
-                _logger.LogInformation("Payment still processing.");
-                await Task.Delay(SHORT_DELAY);
-            }
-
-            _logger.LogWarning("Couldnt confirm payment");
-
-            return false;
+        private async Task FinishReplenishmentAsync(IPhoneDevice device)
+        {
+            _logger.LogInformation("Replenishment successful");
+            await device.TapAsync(48, 1728, 1032, 1872);
         }
 
         private async Task<string> TakeScreenShotAndRecognizeText(IPhoneDevice device)

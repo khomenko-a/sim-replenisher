@@ -2,10 +2,14 @@
 {
     public enum Page
     {
+        HomeScreen,
+        PasswordInput,
         Main,
         TopUpCellPhone,
         AmountSelection,
         Confirmation,
-        Success
+        Success,
+        Unknown,
+        Default
     }
 }

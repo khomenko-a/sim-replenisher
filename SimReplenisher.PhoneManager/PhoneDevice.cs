@@ -74,7 +74,7 @@ namespace SimReplenisher.PhoneManager
             await ExecuteAdbShellCommandAsync($"monkey -p {bankApp} -c android.intent.category.LAUNCHER 1");
         }
 
-        public async Task CloseBankApp(string bankApp)
+        public async Task CloseBankAppAsync(string bankApp)
         {
             await ExecuteAdbShellCommandAsync($"am force-stop {bankApp}");
         }

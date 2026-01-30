@@ -10,7 +10,7 @@ namespace SimReplenisher.Domain.Interfaces
         Task InputTextAsync(string text);
         Task GoToHomeScreenAsync();
         Task OpenBankApp(string bankApp);
-        Task CloseBankApp(string bankApp);
+        Task CloseBankAppAsync(string bankApp);
         Task<byte[]> TakeScreenshotAsync();
     }
 }
