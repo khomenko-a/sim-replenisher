@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/Solution Items/" />
+  <Project Path="SimReplenisher.Console/SimReplenisher.Console.csproj" />
+  <Project Path="SimReplenisher.DataManager/SimReplenisher.DataManager.csproj" />
+  <Project Path="SimReplenisher.Domain/SimReplenisher.Domain.csproj" />
+  <Project Path="SimReplenisher.PhoneManager/SimReplenisher.PhoneManager.csproj" />
+  <Project Path="SimReplenisher.TextOnPictureManager/SimReplenisher.TextOnPictureManager.csproj" Id="d11a636f-f5a3-42c4-bb84-3ddba86723ed" />
+</Solution>
