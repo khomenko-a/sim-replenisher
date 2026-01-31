@@ -32,11 +32,14 @@ namespace SimReplenisher.PhoneManager.Scenarios
         private const string SUCCESS_PAGE_MARKER = "//node[@text='Платіж прийнято']";
         private const string HOMESCREEN_PAGE_MARKER = "//node[@resource-id='com.ldmnq.launcher3:id/workspace']";
         private const string AMOUNT_PAGE_MARKER = "//node[@resource-id='uds_amount_input_amount']";
+        private const string PROCESSING_PAGE_MARKER = "//node[@text='Обробка платежу']";
 
         private const string APP_PACKAGE_NAME = "ua.raiffeisen.myraif";
         private const int PASSWORD_LENGTH = 4;
         private const int MAX_ATTEMPTS_OPEN_PAGE = 2;
         private const int MAX_ATTEMPTS_IDENTIFY_PAGE = 5;
+        private const int MAX_ATTEMMPTS_GET_INCASE_OF_EMULATOR_LAG = 2;
+        private const int MAX_ATTEMPTS_RETURN_TO_MAIN_SCREEN = 10;
 
         private const int SHORT_DELAY = 2000;
         private const int MIDDLE_DELAY = 4000;
@@ -89,8 +92,11 @@ namespace SimReplenisher.PhoneManager.Scenarios
                         throw new PageLoadException(currentPage + 1, xml);
                     }
 
-                    stuckOnPageCount++;
-                    await Task.Delay(LONG_DELAY);
+                    if (currentPage != Page.Processing)
+                    {
+                        stuckOnPageCount++;
+                        await Task.Delay(LONG_DELAY);
+                    }
                 }
                 else
                 {
@@ -132,6 +138,11 @@ namespace SimReplenisher.PhoneManager.Scenarios
                         await Task.Delay(LONG_DELAY);
                         break;
 
+                    case Page.Processing:
+                        _logger.LogInformation("Processing payment, waiting...");
+                        await Task.Delay(MIDDLE_DELAY);
+                        break;
+
                     case Page.Success:
                         await FinishReplenishmentAsync(device);
                         await Task.Delay(SHORT_DELAY);
@@ -142,14 +153,21 @@ namespace SimReplenisher.PhoneManager.Scenarios
 
         private async Task ReturnToMainPageAsync(IPhoneDevice device)
         {
+            _logger.LogWarning("Returning to main page");
             var currentPage = await DetectCurrentPageAsync(device);
+            int attempts = 0;
 
-            while (currentPage != Page.Main)
+            while (currentPage != Page.Main && attempts < MAX_ATTEMPTS_RETURN_TO_MAIN_SCREEN)
             {
-                await device.ExecuteAdbShellCommandAsync("input keyevent 4"); // back button
+                await device.ExecuteAdbShellCommandAsync("input keyevent 4");
                 await Task.Delay(SHORT_DELAY);
-
                 currentPage = await DetectCurrentPageAsync(device, currentPage);
+                attempts++;
+            }
+
+            if (currentPage != Page.Main)
+            {
+                await device.CloseBankAppAsync(APP_PACKAGE_NAME);
             }
         }
 
@@ -164,19 +182,25 @@ namespace SimReplenisher.PhoneManager.Scenarios
                 if (xml.SelectSingleNode(AMOUNT_PAGE_MARKER) != null) return Page.AmountSelection;
                 if (xml.SelectSingleNode(TOP_UP_CELL_PHONE_PAGE_MARKER) != null) return Page.TopUpCellPhone;
                 if (xml.SelectSingleNode(CONFIRMATION_PAGE_MARKER) != null) return Page.Confirmation;
+                if (xml.SelectSingleNode(PROCESSING_PAGE_MARKER) != null) return Page.Processing;
             }
 
-            if (previousPage == Page.TopUpCellPhone
+            for (int attempt = 0; attempt < MAX_ATTEMMPTS_GET_INCASE_OF_EMULATOR_LAG; attempt++) // in case of emulator lag try to recognize text a few times
+            {
+                if (previousPage == Page.TopUpCellPhone
+                || previousPage == Page.PasswordInput
                 || previousPage == Page.HomeScreen
                 || previousPage == Page.Default)
-            {
-                var text = await TakeScreenShotAndRecognizeText(device);
+                {
+                    var text = await TakeScreenShotAndRecognizeText(device);
 
-                if (MAIN_PAGE_MARKERS.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase)))
-                    return Page.Main;
+                    if (MAIN_PAGE_MARKERS.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase)))
+                        return Page.Main;
 
-                if (AMOUNT_PAGE_MARKERS.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase)))
-                    return Page.AmountSelection;
+                    if (AMOUNT_PAGE_MARKERS.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase)))
+                        return Page.AmountSelection;
+                }
+                await Task.Delay(SHORT_DELAY);
             }
 
             return Page.Unknown;

@@ -8,6 +8,7 @@
         TopUpCellPhone,
         AmountSelection,
         Confirmation,
+        Processing,
         Success,
         Unknown,
         Default
