@@ -58,11 +58,12 @@ namespace SimReplenisher.PhoneManager.Scenarios
             int totalAttempts = 0;
 
             var previousPage = Page.Default;
+            var currentPage = Page.Default;
             int stuckOnPageCount = 0;
 
             while (totalAttempts < MAX_ATTEMPTS_IDENTIFY_PAGE)
             {
-                var currentPage = await DetectCurrentPageAsync(device, previousPage);
+                currentPage = await DetectCurrentPageAsync(device, previousPage, currentPage);
 
                 if (currentPage == Page.Unknown)
                 {
@@ -171,7 +172,7 @@ namespace SimReplenisher.PhoneManager.Scenarios
             }
         }
 
-        private async Task<Page> DetectCurrentPageAsync(IPhoneDevice device, Page previousPage = Page.Unknown)
+        private async Task<Page> DetectCurrentPageAsync(IPhoneDevice device, Page previousPage = Page.Unknown, Page currentPage = Page.Default)
         {
             var xml = await device.GetXmlDumpAsync();
             if (xml != null)
@@ -190,7 +191,9 @@ namespace SimReplenisher.PhoneManager.Scenarios
                 if (previousPage == Page.TopUpCellPhone
                 || previousPage == Page.PasswordInput
                 || previousPage == Page.HomeScreen
-                || previousPage == Page.Default)
+                || previousPage == Page.Default
+                || currentPage == Page.Main
+                || currentPage == Page.AmountSelection)
                 {
                     var text = await TakeScreenShotAndRecognizeText(device);
 

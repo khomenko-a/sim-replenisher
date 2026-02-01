@@ -28,6 +28,7 @@ namespace SimReplenisher.Domain
                 if (cancellationToken.IsCancellationRequested)
                 {
                     _logger.LogInformation("Operation cancelled before retrieving devices.");
+
                     return;
                 }
 
@@ -48,6 +49,7 @@ namespace SimReplenisher.Domain
                 catch (TaskCanceledException)
                 {
                     _logger.LogInformation("Operation cancelled while waiting for devices.");
+
                     return;
                 }
             }
@@ -76,6 +78,7 @@ namespace SimReplenisher.Domain
                 catch (TaskCanceledException)
                 {
                     _logger.LogInformation("Operation cancelled.");
+
                     return;
                 }
             }

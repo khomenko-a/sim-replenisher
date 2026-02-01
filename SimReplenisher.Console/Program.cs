@@ -2,6 +2,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using SharpAdbClient;
+using Microsoft.Extensions.Logging;
+
 using SimReplenisher.DataManager;
 using SimReplenisher.Domain;
 using SimReplenisher.Domain.Interfaces;
@@ -9,8 +12,6 @@ using SimReplenisher.Domain.Services;
 using SimReplenisher.PhoneManager;
 using SimReplenisher.PhoneManager.Scenarios;
 using SimReplenisher.TextOnPictureManager;
-using SharpAdbClient;
-using Microsoft.Extensions.Logging;
 
 internal class Program
 {
@@ -21,7 +22,16 @@ internal class Program
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
         builder.Services.AddDbContext<SimDbContext>(options =>
-            options.UseMySql(connectionString, new MySqlServerVersion(new Version(5, 7, 42))));
+            options.UseMySql(
+                connectionString, 
+                new MySqlServerVersion(new Version(5, 7, 42)),
+                mySqlOptions =>
+                {
+                    mySqlOptions.EnableRetryOnFailure(
+                        maxRetryCount: 5,
+                        maxRetryDelay: TimeSpan.FromSeconds(10),
+                        errorNumbersToAdd: null);
+                }));
 
         builder.Logging.AddSimpleConsole(options =>
         {
