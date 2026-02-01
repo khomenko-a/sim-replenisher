@@ -263,10 +263,10 @@ namespace SimReplenisher.PhoneManager.Scenarios
 
             await device.InputTextAsync(simToReplenish.SimData.PhoneNumber);
 
-            await Task.Delay(SHORT_DELAY);
+            await Task.Delay(MIDDLE_DELAY);
 
             _logger.LogInformation("Clicking Top Up button");
-            await device.TapAsync(48, 1728, 1032, 1872); // tap Top Up
+            await device.TapAsync(100, 1790, 1000, 1850); // tap Top Up
         }
 
         private async Task OpenConfirmationReplenishmentPageAsync(IPhoneDevice device, SimToReplenish simToReplenish)
@@ -276,19 +276,19 @@ namespace SimReplenisher.PhoneManager.Scenarios
             await Task.Delay(SHORT_DELAY);
 
             _logger.LogInformation("Clicking Continue button");
-            await device.TapAsync(48, 1728, 1032, 1872); // tap Continue
+            await device.TapAsync(100, 1790, 1000, 1850); // tap Continue
         }
 
         private async Task OpenConfirmedPageAsync(IPhoneDevice device)
         {
             _logger.LogInformation("Clicking Pay button");
-            await device.TapAsync(48, 1728, 1032, 1872); // tap Pay
+            await device.TapAsync(100, 1790, 1000, 1850); // tap Pay
         }
 
         private async Task FinishReplenishmentAsync(IPhoneDevice device)
         {
             _logger.LogInformation("Replenishment successful");
-            await device.TapAsync(48, 1728, 1032, 1872);
+            await device.TapAsync(100, 1790, 1000, 1850);
         }
 
         private async Task<string> TakeScreenShotAndRecognizeText(IPhoneDevice device)
