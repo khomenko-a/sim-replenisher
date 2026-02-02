@@ -35,7 +35,7 @@ internal class Program
 
         builder.Logging.AddSimpleConsole(options =>
         {
-            options.IncludeScopes = false;
+            options.IncludeScopes = true;
             options.SingleLine = true;
             options.TimestampFormat = "[hh:mm:ss] ";
         });

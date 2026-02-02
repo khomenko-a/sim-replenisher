@@ -10,6 +10,9 @@
         Confirmation,
         Processing,
         Success,
+        PasswordReset,
+        TechnicalProblem,
+        UnableShowCards,
         Unknown,
         Default
     }

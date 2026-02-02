@@ -9,7 +9,7 @@ namespace SimReplenisher.Domain.Interfaces
         Task ExecuteAdbShellCommandAsync(string command);
         Task InputTextAsync(string text);
         Task GoToHomeScreenAsync();
-        Task OpenBankApp(string bankApp);
+        Task OpenBankAppAsync(string bankApp);
         Task CloseBankAppAsync(string bankApp);
         Task<byte[]> TakeScreenshotAsync();
     }

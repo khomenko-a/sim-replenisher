@@ -26,6 +26,20 @@ namespace SimReplenisher.PhoneManager.Scenarios
             "З картки"
         };
 
+        private static readonly Dictionary<Page, string> PAGES_XML_MARKERS = new()
+        {
+            { Page.HomeScreen, HOMESCREEN_PAGE_MARKER },
+            { Page.PasswordInput, PASSWORD_PAGE_MARKER },
+            { Page.Success, SUCCESS_PAGE_MARKER },
+            { Page.AmountSelection, AMOUNT_PAGE_MARKER },
+            { Page.TopUpCellPhone, TOP_UP_CELL_PHONE_PAGE_MARKER },
+            { Page.Confirmation, CONFIRMATION_PAGE_MARKER },
+            { Page.Processing, PROCESSING_PAGE_MARKER },
+            { Page.PasswordReset, CHANGE_CURRENT_PASS_MARKER },
+            { Page.TechnicalProblem, ERROR_MESSAGE_MARKER },
+            { Page.UnableShowCards, UNABLE_SHOW_CARDS_MARKER }
+        };
+
         private const string PASSWORD_PAGE_MARKER = "//node[@text=\"Введіть пароль\"]";
         private const string TOP_UP_CELL_PHONE_PAGE_MARKER = "//node[contains(@text, 'Отримувач')]";
         private const string CONFIRMATION_PAGE_MARKER = "//node[contains(@text, 'Оплатити')]";
@@ -33,6 +47,9 @@ namespace SimReplenisher.PhoneManager.Scenarios
         private const string HOMESCREEN_PAGE_MARKER = "//node[@resource-id='com.ldmnq.launcher3:id/workspace']";
         private const string AMOUNT_PAGE_MARKER = "//node[@resource-id='uds_amount_input_amount']";
         private const string PROCESSING_PAGE_MARKER = "//node[@text='Обробка платежу']";
+        private const string CHANGE_CURRENT_PASS_MARKER = "//node[@text='Змінити поточний пароль?']";
+        private const string ERROR_MESSAGE_MARKER = "//node[@resource-id='uds_alert_message' and @text='Технічна помилка. Будь ласка, спробуйте пізніше.']";
+        private const string UNABLE_SHOW_CARDS_MARKER = "//node[@text='Неможливо показати рахунки']";
 
         private const string APP_PACKAGE_NAME = "ua.raiffeisen.myraif";
         private const int PASSWORD_LENGTH = 4;
@@ -40,6 +57,7 @@ namespace SimReplenisher.PhoneManager.Scenarios
         private const int MAX_ATTEMPTS_IDENTIFY_PAGE = 5;
         private const int MAX_ATTEMMPTS_GET_INCASE_OF_EMULATOR_LAG = 2;
         private const int MAX_ATTEMPTS_RETURN_TO_MAIN_SCREEN = 10;
+        private const int AMOUNT_OF_RETRIES_FOR_TECHNICAL_ISSUE = 2;
 
         private const int SHORT_DELAY = 2000;
         private const int MIDDLE_DELAY = 4000;
@@ -56,14 +74,20 @@ namespace SimReplenisher.PhoneManager.Scenarios
         public async Task ReplenishNumber(IPhoneDevice device, SimToReplenish simToReplenish)
         {
             int totalAttempts = 0;
+            int technicalIssueAttempts = 0;
 
             var previousPage = Page.Default;
-            var currentPage = Page.Default;
             int stuckOnPageCount = 0;
 
             while (totalAttempts < MAX_ATTEMPTS_IDENTIFY_PAGE)
             {
-                currentPage = await DetectCurrentPageAsync(device, previousPage, currentPage);
+                if (technicalIssueAttempts >= AMOUNT_OF_RETRIES_FOR_TECHNICAL_ISSUE)
+                {
+                    _logger.LogWarning("Exceeded maximum attempts for technical issues. Aborting replenishment. {Number} is dead or bank is glitching", simToReplenish.SimData.PhoneNumber);
+                    throw new PageLoadException(Page.TechnicalProblem, null);
+                }
+
+                var currentPage = await DetectCurrentPageAsync(device, previousPage);
 
                 if (currentPage == Page.Unknown)
                 {
@@ -107,48 +131,66 @@ namespace SimReplenisher.PhoneManager.Scenarios
 
                 previousPage = currentPage;
 
+                var delay = SHORT_DELAY;
+
                 switch (currentPage)
                 {
                     case Page.HomeScreen:
                         await OpenAppOnMainPageAsync(device);
-                        await Task.Delay(LONG_DELAY);
+                        delay = LONG_DELAY;
                         break;
 
                     case Page.PasswordInput:
                         await UnlockBankApp(device);
-                        await Task.Delay(LONG_DELAY);
+                        delay = LONG_DELAY;
                         break;
 
                     case Page.Main:
                         await OpenTopUpCellPhonePageAsync(device);
-                        await Task.Delay(MIDDLE_DELAY);
+                        delay = MIDDLE_DELAY;
                         break;
 
                     case Page.TopUpCellPhone:
                         await OpenAmountPageAsync(device, simToReplenish);
-                        await Task.Delay(MIDDLE_DELAY);
+                        delay = MIDDLE_DELAY;
                         break;
 
                     case Page.AmountSelection:
                         await OpenConfirmationReplenishmentPageAsync(device, simToReplenish);
-                        await Task.Delay(LONG_DELAY);
+                        delay = LONG_DELAY;
                         break;
 
                     case Page.Confirmation:
                         await OpenConfirmedPageAsync(device);
-                        await Task.Delay(LONG_DELAY);
+                        delay = LONG_DELAY;
                         break;
 
                     case Page.Processing:
                         _logger.LogInformation("Processing payment, waiting...");
-                        await Task.Delay(MIDDLE_DELAY);
+                        delay = MIDDLE_DELAY;
+                        break;
+
+                    case Page.PasswordReset:
+                        _logger.LogWarning("The app is glitching. Reset password window is open. Closing...");
+                        await CloseResetPasswordWindowAsync(device);
+                        break;
+
+                    case Page.TechnicalProblem:
+                        _logger.LogWarning("There is a technical problem. Maybe the number is dead.");
+                        technicalIssueAttempts++;
+                        break;
+
+                    case Page.UnableShowCards:
+                        _logger.LogCritical("The app is not working!");
+                        await RestartApp(device);
                         break;
 
                     case Page.Success:
                         await FinishReplenishmentAsync(device);
-                        await Task.Delay(SHORT_DELAY);
                         return;
                 }
+
+                await Task.Delay(delay + 2000);
             }
         }
 
@@ -172,28 +214,37 @@ namespace SimReplenisher.PhoneManager.Scenarios
             }
         }
 
-        private async Task<Page> DetectCurrentPageAsync(IPhoneDevice device, Page previousPage = Page.Unknown, Page currentPage = Page.Default)
+        private async Task<Page> DetectCurrentPageAsync(IPhoneDevice device, Page previousPage = Page.Unknown)
         {
-            var xml = await device.GetXmlDumpAsync();
-            if (xml != null)
+            var isProperPageForCV = 
+                   previousPage == Page.TopUpCellPhone
+                || previousPage == Page.PasswordInput
+                || previousPage == Page.HomeScreen
+                || previousPage == Page.Default;
+
+            for (int attempt = 0; attempt < MAX_ATTEMMPTS_GET_INCASE_OF_EMULATOR_LAG; attempt++) // in case of emulator lag try to recognize text a few times
             {
-                if (xml.SelectSingleNode(HOMESCREEN_PAGE_MARKER) != null) return Page.HomeScreen;
-                if (xml.SelectSingleNode(PASSWORD_PAGE_MARKER) != null) return Page.PasswordInput;
-                if (xml.SelectSingleNode(SUCCESS_PAGE_MARKER) != null) return Page.Success;
-                if (xml.SelectSingleNode(AMOUNT_PAGE_MARKER) != null) return Page.AmountSelection;
-                if (xml.SelectSingleNode(TOP_UP_CELL_PHONE_PAGE_MARKER) != null) return Page.TopUpCellPhone;
-                if (xml.SelectSingleNode(CONFIRMATION_PAGE_MARKER) != null) return Page.Confirmation;
-                if (xml.SelectSingleNode(PROCESSING_PAGE_MARKER) != null) return Page.Processing;
+                var xml = await device.GetXmlDumpAsync();
+                if (xml != null)
+                {
+                    foreach (var (page, xpath) in PAGES_XML_MARKERS)
+                    {
+                        if (xml.SelectSingleNode(xpath) != null)
+                        {
+                            return page;
+                        }
+                    }
+                }
+
+                if (isProperPageForCV)
+                {
+                    break;
+                }
             }
 
             for (int attempt = 0; attempt < MAX_ATTEMMPTS_GET_INCASE_OF_EMULATOR_LAG; attempt++) // in case of emulator lag try to recognize text a few times
             {
-                if (previousPage == Page.TopUpCellPhone
-                || previousPage == Page.PasswordInput
-                || previousPage == Page.HomeScreen
-                || previousPage == Page.Default
-                || currentPage == Page.Main
-                || currentPage == Page.AmountSelection)
+                if (isProperPageForCV)
                 {
                     var text = await TakeScreenShotAndRecognizeText(device);
 
@@ -212,7 +263,7 @@ namespace SimReplenisher.PhoneManager.Scenarios
         private async Task OpenAppOnMainPageAsync(IPhoneDevice device) //add logging
         {
             _logger.LogInformation("Opening bank app");
-            await device.OpenBankApp(APP_PACKAGE_NAME);
+            await device.OpenBankAppAsync(APP_PACKAGE_NAME);
 
             await Task.Delay(LONG_DELAY);
 
@@ -246,6 +297,11 @@ namespace SimReplenisher.PhoneManager.Scenarios
                 await device.TapAsync(240, 900, 350, 1000); // enter password
                 await Task.Delay(SHORT_DELAY);
             }
+        }
+
+        private async Task CloseResetPasswordWindowAsync(IPhoneDevice device)
+        {
+            await device.TapAsync(300, 1130, 400, 1200);
         }
 
         private async Task OpenTopUpCellPhonePageAsync(IPhoneDevice device)
@@ -289,6 +345,13 @@ namespace SimReplenisher.PhoneManager.Scenarios
         {
             _logger.LogInformation("Replenishment successful");
             await device.TapAsync(100, 1790, 1000, 1850);
+        }
+
+        private async Task RestartApp(IPhoneDevice device)
+        {
+            await device.CloseBankAppAsync(APP_PACKAGE_NAME);
+            await Task.Delay(MIDDLE_DELAY);
+            await device.OpenBankAppAsync(APP_PACKAGE_NAME);
         }
 
         private async Task<string> TakeScreenShotAndRecognizeText(IPhoneDevice device)
