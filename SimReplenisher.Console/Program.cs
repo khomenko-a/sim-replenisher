@@ -40,6 +40,19 @@ internal class Program
             options.TimestampFormat = "[hh:mm:ss] ";
         });
 
+        var adbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "adb_bin", "adb.exe");
+
+        var server = new AdbServer();
+        try
+        {
+            server.StartServer(adbPath, restartServerIfNewer: false);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"CRITICAL: Failed to start ADB server. {ex.Message}");
+            throw;
+        }
+
         builder.Services.AddSingleton<IDeviceManager, DeviceManager>();
         builder.Services.AddSingleton<IAdbClient, AdbClient>();
         builder.Services.AddSingleton<IReplenishmentOrchestrator, ReplenishmentOrchestrator>();
