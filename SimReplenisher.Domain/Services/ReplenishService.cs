@@ -18,12 +18,7 @@ namespace SimReplenisher.Domain.Services
         {
             _dataRepository = dataRepository;
             _allScenarios = allScenarios;
-            _logger = logger;
-
-            if (!Directory.Exists(SCREEN_DUMP_FOLDER))
-            {
-                Directory.CreateDirectory(SCREEN_DUMP_FOLDER);
-            }
+            _logger = logger;  
         }
 
         public async Task ExecuteReplenishment(IPhoneDevice device)

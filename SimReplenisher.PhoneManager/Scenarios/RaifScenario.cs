@@ -28,6 +28,7 @@ namespace SimReplenisher.PhoneManager.Scenarios
 
         private static readonly Dictionary<Page, string> PAGES_XML_MARKERS = new()
         {
+            { Page.Main, MAIN_PAGE_MARKER },
             { Page.HomeScreen, HOMESCREEN_PAGE_MARKER },
             { Page.PasswordInput, PASSWORD_PAGE_MARKER },
             { Page.Success, SUCCESS_PAGE_MARKER },
@@ -40,9 +41,10 @@ namespace SimReplenisher.PhoneManager.Scenarios
             { Page.UnableShowCards, UNABLE_SHOW_CARDS_MARKER }
         };
 
+        private const string MAIN_PAGE_MARKER = "//node[@text=\"Головна\"]";
         private const string PASSWORD_PAGE_MARKER = "//node[@text=\"Введіть пароль\"]";
         private const string TOP_UP_CELL_PHONE_PAGE_MARKER = "//node[contains(@text, 'Отримувач')]";
-        private const string CONFIRMATION_PAGE_MARKER = "//node[contains(@text, 'Оплатити')]";
+        private const string CONFIRMATION_PAGE_MARKER = "//node[contains(@text, 'Деталі платежу')]";
         private const string SUCCESS_PAGE_MARKER = "//node[@text='Платіж прийнято']";
         private const string HOMESCREEN_PAGE_MARKER = "//node[@resource-id='com.ldmnq.launcher3:id/workspace']";
         private const string AMOUNT_PAGE_MARKER = "//node[@resource-id='uds_amount_input_amount']";
