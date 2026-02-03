@@ -10,6 +10,8 @@ namespace SimReplenisher.Domain
         private readonly IDeviceManager _deviceManager;
         private readonly ILogger<ReplenishmentOrchestrator> _logger;
 
+        private static readonly string SCREEN_DUMP_FOLDER = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ErrorDumps");
+
         private const int DELAY_GET_DEVICES = 10000;
 
         public ReplenishmentOrchestrator(IServiceScopeFactory scopeFactory, IDeviceManager deviceManager, ILogger<ReplenishmentOrchestrator> logger)
@@ -17,6 +19,11 @@ namespace SimReplenisher.Domain
             _scopeFactory = scopeFactory;
             _deviceManager = deviceManager;
             _logger = logger;
+
+            if (!Directory.Exists(SCREEN_DUMP_FOLDER))
+            {
+                Directory.CreateDirectory(SCREEN_DUMP_FOLDER);
+            }
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
@@ -28,6 +35,7 @@ namespace SimReplenisher.Domain
                 if (cancellationToken.IsCancellationRequested)
                 {
                     _logger.LogInformation("Operation cancelled before retrieving devices.");
+
                     return;
                 }
 
@@ -48,6 +56,7 @@ namespace SimReplenisher.Domain
                 catch (TaskCanceledException)
                 {
                     _logger.LogInformation("Operation cancelled while waiting for devices.");
+
                     return;
                 }
             }
@@ -76,6 +85,7 @@ namespace SimReplenisher.Domain
                 catch (TaskCanceledException)
                 {
                     _logger.LogInformation("Operation cancelled.");
+
                     return;
                 }
             }

@@ -69,12 +69,12 @@ namespace SimReplenisher.PhoneManager
             await ExecuteAdbShellCommandAsync("input keyevent 3");
         }
 
-        public async Task OpenBankApp(string bankApp)
+        public async Task OpenBankAppAsync(string bankApp)
         {
             await ExecuteAdbShellCommandAsync($"monkey -p {bankApp} -c android.intent.category.LAUNCHER 1");
         }
 
-        public async Task CloseBankApp(string bankApp)
+        public async Task CloseBankAppAsync(string bankApp)
         {
             await ExecuteAdbShellCommandAsync($"am force-stop {bankApp}");
         }

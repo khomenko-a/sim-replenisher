@@ -14,6 +14,8 @@ namespace SimReplenisher.Domain.Entities
         public AppType Bank { get; set; }
         public PhoneProvider? Provider { get; set; }
         public int? Amount { get; set; }
+        public DateTime AddingDate { get; set; }
+        public DateTime? ExecutionDate { get; set; }
 
         [ForeignKey(nameof(SimDataId))]
         public SimData SimData { get; set; }

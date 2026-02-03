@@ -18,7 +18,7 @@ namespace SimReplenisher.Domain.Services
         {
             _dataRepository = dataRepository;
             _allScenarios = allScenarios;
-            _logger = logger;
+            _logger = logger;  
         }
 
         public async Task ExecuteReplenishment(IPhoneDevice device)
@@ -34,51 +34,58 @@ namespace SimReplenisher.Domain.Services
 
             var scenario = _allScenarios.FirstOrDefault(s => s.Bank == sim.Bank);
 
-            try
+            using (_logger.BeginScope("Number: {Number}", sim.SimData.PhoneNumber))
             {
-                if (scenario is null)
+                try
                 {
-                    _logger.LogError("Replenishment failed due to missing scenario for bank {Bank}", sim.Bank);
+                    if (scenario is null)
+                    {
+                        _logger.LogError("Replenishment failed due to missing scenario for bank {Bank}", sim.Bank);
+
+                        sim.Status = SimStatus.Failure;
+                        await _dataRepository.SaveChangesAsync();
+
+                        return;
+                    }
+
+                    await scenario.ReplenishNumber(device, sim);
+
+                    sim.Status = SimStatus.Success;
+                    await _dataRepository.SaveChangesAsync();
+                }
+                catch (PageLoadException ex)
+                {
+                    _logger.LogError("Error loading {Page} page.", ex.Page.ToString());
+
+                    if (ex.ScreenDump != null)
+                    {
+                        var fileName = $"Error_{sim.SimData.PhoneNumber}_{ex.Page}_{DateTime.Now:yyyyMMdd_HHmmss}.xml";
+                        var fullPath = Path.Combine(SCREEN_DUMP_FOLDER, fileName);
+
+                        ex.ScreenDump.Save(fullPath);
+                    }
+
+                    if(ex.Page == Page.Unknown)
+                    {
+                        _logger.LogWarning("Probably emulator is glitching. Setting status to new.");
+                        sim.Status = SimStatus.New;
+                    }
+                    else
+                    {
+                        sim.Status = SimStatus.Failure;
+                    }
+
+                    await _dataRepository.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Error executing replenishment for {Phone}", sim.SimData.PhoneNumber);
 
                     sim.Status = SimStatus.Failure;
                     await _dataRepository.SaveChangesAsync();
 
-                    return;
+                    throw;
                 }
-
-                if (!Directory.Exists(SCREEN_DUMP_FOLDER))
-                {
-                    Directory.CreateDirectory(SCREEN_DUMP_FOLDER);
-                }
-
-                await scenario.ReplenishNumber(device, sim);
-
-                sim.Status = SimStatus.Success;
-                await _dataRepository.SaveChangesAsync();
-            }
-            catch (PageLoadException ex)
-            {
-                _logger.LogError("Error loading {Page} page.", ex.Page.ToString());
-
-                if (ex.ScreenDump != null)
-                {
-                    var fileName = $"Error_{sim.SimData.PhoneNumber}_{ex.Page}_{DateTime.Now:yyyyMMdd_HHmmss}.xml";
-                    var fullPath = Path.Combine(SCREEN_DUMP_FOLDER, fileName);
-
-                    ex.ScreenDump.Save(fullPath);
-                }
-
-                sim.Status = SimStatus.Failure;
-                await _dataRepository.SaveChangesAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("Error executing replenishment for {Phone}", sim.SimData.PhoneNumber);
-
-                sim.Status = SimStatus.Failure;
-                await _dataRepository.SaveChangesAsync();
-
-                throw;
             }
         }
     }

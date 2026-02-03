@@ -1,9 +1,5 @@
 ﻿using SimReplenisher.Domain.Interfaces;
-using System;
-using System.Collections.Generic;
-using System.Text;
 using Tesseract;
-using Windows.Graphics.Imaging;
 
 namespace SimReplenisher.TextOnPictureManager
 {

@@ -22,31 +22,36 @@ namespace SimReplenisher.DataManager
 
         public async Task<SimToReplenish?> GetNextJobAndLockAsync()
         {
-            using var transaction = _context.Database.BeginTransaction(IsolationLevel.Serializable);
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            try
+            return await strategy.ExecuteAsync(async () =>
             {
-                var job = _context.ReplenishmentRequests
-                    .Where(s => s.Status == SimStatus.New)
-                    .Include(s => s.SimData)
-                    .OrderBy(s => s.Id)
-                    .FirstOrDefault();
+                using var transaction = _context.Database.BeginTransaction(IsolationLevel.Serializable);
 
-                if (job != null)
+                try
                 {
-                    job.Status = SimStatus.Processing;
+                    var job = _context.ReplenishmentRequests
+                        .Where(s => s.Status == SimStatus.New)
+                        .Include(s => s.SimData)
+                        .OrderBy(s => s.Id)
+                        .FirstOrDefault();
 
-                    await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
+                    if (job != null)
+                    {
+                        job.Status = SimStatus.Processing;
+
+                        await _context.SaveChangesAsync();
+                        await transaction.CommitAsync();
+                    }
+
+                    return job;
                 }
-
-                return job;
-            }
-            catch (Exception)
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
         }
     }
 }
