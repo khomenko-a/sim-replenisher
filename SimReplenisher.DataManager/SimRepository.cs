@@ -30,11 +30,12 @@ namespace SimReplenisher.DataManager
 
                 try
                 {
-                    var job = _context.ReplenishmentRequests
-                        .Where(s => s.Status == SimStatus.New)
+                    var job = await _context.ReplenishmentRequests
+                        .Where(s => s.Status == SimStatus.New || s.Status == SimStatus.Priority)
                         .Include(s => s.SimData)
-                        .OrderBy(s => s.Id)
-                        .FirstOrDefault();
+                        .OrderByDescending(s => s.Status)
+                        .ThenBy(s => s.Id)
+                        .FirstOrDefaultAsync();
 
                     if (job != null)
                     {
@@ -52,6 +53,22 @@ namespace SimReplenisher.DataManager
                     throw;
                 }
             });
+        }
+
+        public async Task LogAsync(SimToReplenish sim, string message)
+        {
+            var log = new ReplenishmentLog
+            {
+                SimDataId = sim.SimDataId,
+                PhoneNumber = sim.SimData.PhoneNumber,
+                Amount = sim.Amount.Value,
+                Status = sim.Status == SimStatus.Success,
+                AddingDate = sim.AddingDate,
+                ExecutionDate = DateTime.UtcNow.AddHours(2),
+                Message = message
+            };
+
+            _context.RaifLogs.Add(log);
         }
     }
 }

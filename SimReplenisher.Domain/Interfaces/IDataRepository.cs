@@ -7,5 +7,6 @@ namespace SimReplenisher.Domain.Interfaces
     {
         Task<SimToReplenish?> GetNextJobAndLockAsync();
         Task SaveChangesAsync();
+        Task LogAsync(SimToReplenish sim, string message);
     }
 }

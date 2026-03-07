@@ -49,7 +49,7 @@ namespace SimReplenisher.Domain.Entities
                 {
                 var n when n.StartsWith("38067") || n.StartsWith("38068") || n.StartsWith("38077") || n.StartsWith("38096") || n.StartsWith("38097") || n.StartsWith("38098") => PhoneProvider.Kyivstar,
                 var n when n.StartsWith("38063") || n.StartsWith("38093") || n.StartsWith("38073") => PhoneProvider.Lifecell,
-                var n when n.StartsWith("38050") || n.StartsWith("38066") || n.StartsWith("38095") || n.StartsWith("38099") => PhoneProvider.Vodafone,
+                var n when n.StartsWith("38050") || n.StartsWith("38066") || n.StartsWith("38095") || n.StartsWith("38099") || n.StartsWith("38075") => PhoneProvider.Vodafone,
                 _ => throw new InvalidOperationException("Unknown phone provider based on the phone number prefix.")
             };
         }

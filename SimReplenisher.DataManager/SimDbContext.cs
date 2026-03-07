@@ -8,6 +8,7 @@ namespace SimReplenisher.DataManager
     {
         public DbSet<SimToReplenish> ReplenishmentRequests { get; set; }
         public DbSet<SimData> SimDatas { get; set; }
+        public DbSet<ReplenishmentLog> RaifLogs { get; set; }
 
         public SimDbContext(DbContextOptions<SimDbContext> dbContextOptions) : base(dbContextOptions) { }
 

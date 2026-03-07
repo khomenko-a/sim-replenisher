@@ -14,6 +14,8 @@
         TechnicalProblem,
         UnableShowCards,
         Unknown,
-        Default
+        Default,
+        Blocked,
+        NotEnoughFunds,
     }
 }

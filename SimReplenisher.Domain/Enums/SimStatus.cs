@@ -5,6 +5,8 @@
         New,
         Processing,
         Success,
-        Failure
+        Failure,
+        UnknownProvider,
+        Priority,
     }
 }

@@ -1,6 +1,7 @@
 ﻿using SimReplenisher.Domain.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SimReplenisher.Domain.Exceptions;
 
 namespace SimReplenisher.Domain
 {
@@ -76,7 +77,14 @@ namespace SimReplenisher.Domain
 
                 var replenishService = scope.ServiceProvider.GetRequiredService<IReplenishService>();
 
-                await replenishService.ExecuteReplenishment(device);
+                try
+                {
+                    await replenishService.ExecuteReplenishment(device);
+                }
+                catch (PageLoadException)
+                {
+                    return;
+                }
 
                 try
                 {

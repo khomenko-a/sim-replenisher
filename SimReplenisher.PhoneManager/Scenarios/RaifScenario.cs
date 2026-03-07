@@ -26,6 +26,9 @@ namespace SimReplenisher.PhoneManager.Scenarios
             "З картки"
         };
 
+        private static readonly string NOT_ENOUGH_FUNDS_MARKERS = "Недостатньо грошей";
+
+
         private static readonly Dictionary<Page, string> PAGES_XML_MARKERS = new()
         {
             { Page.Main, MAIN_PAGE_MARKER },
@@ -38,7 +41,9 @@ namespace SimReplenisher.PhoneManager.Scenarios
             { Page.Processing, PROCESSING_PAGE_MARKER },
             { Page.PasswordReset, CHANGE_CURRENT_PASS_MARKER },
             { Page.TechnicalProblem, ERROR_MESSAGE_MARKER },
-            { Page.UnableShowCards, UNABLE_SHOW_CARDS_MARKER }
+            { Page.UnableShowCards, UNABLE_SHOW_CARDS_MARKER },
+            {  Page.Blocked, CARD_BLOCKED  },
+            { Page.NotEnoughFunds, NOT_ENOUGH_MONEY }
         };
 
         private const string MAIN_PAGE_MARKER = "//node[@text=\"Головна\"]";
@@ -52,6 +57,8 @@ namespace SimReplenisher.PhoneManager.Scenarios
         private const string CHANGE_CURRENT_PASS_MARKER = "//node[@text='Змінити поточний пароль?']";
         private const string ERROR_MESSAGE_MARKER = "//node[@resource-id='uds_alert_message' and @text='Технічна помилка. Будь ласка, спробуйте пізніше.']";
         private const string UNABLE_SHOW_CARDS_MARKER = "//node[@text='Неможливо показати рахунки']";
+        private const string CARD_BLOCKED = "//node[@text='Заблоковано']";
+        private const string NOT_ENOUGH_MONEY = "//node[@text='Недостатньо грошей']";
 
         private const string APP_PACKAGE_NAME = "ua.raiffeisen.myraif";
         private const int PASSWORD_LENGTH = 4;
@@ -190,6 +197,12 @@ namespace SimReplenisher.PhoneManager.Scenarios
                     case Page.Success:
                         await FinishReplenishmentAsync(device);
                         return;
+
+                    case Page.Blocked:
+                        throw new PageLoadException(Page.Blocked, null);
+
+                    case Page.NotEnoughFunds:
+                        throw new PageLoadException(Page.NotEnoughFunds, null);
                 }
 
                 await Task.Delay(delay + 2000);
@@ -255,6 +268,9 @@ namespace SimReplenisher.PhoneManager.Scenarios
 
                     if (AMOUNT_PAGE_MARKERS.Any(m => text.Contains(m, StringComparison.OrdinalIgnoreCase)))
                         return Page.AmountSelection;
+
+                    if (text.Contains(NOT_ENOUGH_FUNDS_MARKERS, StringComparison.OrdinalIgnoreCase))
+                        return Page.NotEnoughFunds;
                 }
                 await Task.Delay(SHORT_DELAY);
             }
